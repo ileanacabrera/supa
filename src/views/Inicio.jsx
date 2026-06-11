@@ -1,10 +1,15 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { Container, Row, Col, Card, Spinner, Form, Button } from "react-bootstrap";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell
 } from "recharts";
 import { supabase } from "../database/supabaseconfig";
 import * as XLSX from 'xlsx';
+
+// Importaciones corregidas (comillas normales)
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import html2canvas from "html2canvas";
 
 const Inicio = () => {
   const [cargando, setCargando] = useState(true);
@@ -20,6 +25,9 @@ const Inicio = () => {
     ventasPorHora: [],
     ventasPorCategoria: []
   });
+
+  // 1. Ref movido al nivel del componente para que sea global y html2canvas lo encuentre
+  const graficoHoraRef = useRef(null);
 
   const COLORES = ["#5e26b2", "#39ff95", "#ff6bc6", "#8b46ff", "#00d4ff", "#ffd93d"];
 
@@ -212,6 +220,63 @@ const Inicio = () => {
     }
   };
 
+  // 2. Función transcrita de la captura para generar el PDF
+  const generarPdfVentasHora = async () => {
+    try {
+      const pdf = new jsPDF("p", "mm", "a4");
+
+      // Titulo y fecha
+      pdf.setFontSize(18);
+      pdf.setTextColor("#330775");
+      pdf.setFont("helvetica", "bold");
+      pdf.text("Reporte de Ventas por Hora", 14, 15);
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor("#000000");
+      pdf.setFontSize(10);
+      pdf.text(`Periodo: ${fechaDesde} - ${fechaHasta}`, 14, 22);
+
+      // Imagen del gráfico (Usando la referencia correctamente)
+      const canvas = await html2canvas(graficoHoraRef.current);
+      const imagen = canvas.toDataURL("image/png");
+      pdf.addImage(imagen, "PNG", 10, 30, 190, 80);
+
+      // Resumen general
+      pdf.setFontSize(14);
+      pdf.setTextColor("#330775");
+      pdf.setFont("helvetica", "bold");
+      pdf.text("Resumen General", 14, 115);
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor("#000000");
+      pdf.setFontSize(10);
+
+      pdf.text(`Total Ventas: C$ ${estadisticas.totalVentas.toFixed(2)}`, 14, 125);
+      pdf.text(`Ventas Efectivo: C$ ${estadisticas.ventasEfectivo.toFixed(2)}`, 14, 132);
+      pdf.text(`Ventas Tarjeta: C$ ${estadisticas.ventasTarjeta.toFixed(2)}`, 14, 139);
+      pdf.text(`Productos Vendidos: ${estadisticas.productosVendidos}`, 14, 146);
+      pdf.text(`Cantidad Ventas: ${estadisticas.cantidadVentas}`, 14, 153);
+
+      // Tabla de ventas por hora
+      const filas = estadisticas.ventasPorHora.map(item => [
+        item.hora,
+        `C$ ${item.total}`
+      ]);
+
+      autoTable(pdf, {
+        startY: 160,
+        head: [["Hora", "Monto Acumulado"]],
+        body: filas
+      });
+
+      // Descargar PDF
+      const fechaActual = new Date().toLocaleDateString("en-CA", { timeZone: "America/Managua" });
+      pdf.save(`VentasHora_${fechaDesde}_${fechaHasta}_Generado_${fechaActual}.pdf`);
+
+    } catch (error) {
+      console.error(error);
+      alert("Error generando PDF");
+    }
+  };
+
   if (cargando) {
     return (
       <Container className="text-center mt-5">
@@ -252,10 +317,11 @@ const Inicio = () => {
       <Row className="g-4 mb-5">
         <Col md={6} lg={3}>
           <Card className="h-100 text-white shadow" style={{ background: "linear-gradient(135deg, #28a745, #34ce57)" }}>
-            <Card.Body>
+            <Card.Body >
               <h5>Ventas Totales</h5>
               <h2>C$ {estadisticas.totalVentas.toFixed(2)}</h2>
-            </Card.Body>
+            </Card.Body >
+          
           </Card>
         </Col>
         <Col md={6} lg={3}>
@@ -287,7 +353,8 @@ const Inicio = () => {
       <Row className="g-4">
         <Col lg={8}>
           <Card className="shadow border-0">
-            <Card.Body>
+            {/* 3. Sintaxis del JSX corregida para el ref */}
+            <Card.Body ref={graficoHoraRef}>
               <h5 className="mb-3">Ventas por Hora</h5>
               <ResponsiveContainer width="100%" height={360}>
                 <LineChart data={estadisticas.ventasPorHora}>
@@ -324,6 +391,15 @@ const Inicio = () => {
               </ResponsiveContainer>
             </Card.Body>
           </Card>
+          <div className="p-3 text-center">
+            <Button
+              variant="outline-danger"
+              onClick={generarPdfVentasHora}
+            >
+              <i className="bi bi-file-earmark-pdf me-2"></i>
+              Descargar PDF
+            </Button>
+          </div>
         </Col>
       </Row>
     </div>
